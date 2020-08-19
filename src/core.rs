@@ -2,45 +2,52 @@
 //! part of the crate namespace.
 
 use num_traits::{Float, FromPrimitive};
-use rand::distributions::{Distribution, Standard};
-use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::fmt::Display;
-use std::ops::AddAssign;
+use std::ops::{Add, AddAssign};
 
-/// Argument type every integrand must accept. Since this is a trait, the integrand must accept
-/// (mutable) references to a trait object.
-pub trait Arguments<T> {
-    /// This function allows to fill histograms. Since it's possible there are no histograms, the
-    /// return value is an option.
-    fn histo_filler(&mut self) -> Option<&mut dyn HistogramFiller<T>>;
-
-    /// Returns the weight of for this call.
-    fn weight(&mut self) -> T;
-
-    /// Returns the point of the hypercube $[0,1)^d$ the integrand is evaluated at. The value $d$
-    /// is given by the length of the returned slice.
-    fn x(&self) -> &[T];
+/// The result of a call to an integrand.
+/// 
+/// It contains the weight of the integrand for the given phase space point 
+/// and for each one-dimensional histogram (if requested, else `None`) contains 
+/// both the value of the observable (used to determine the bin in the histogram)
+/// and the weight to be filled into the bin. 
+/// 
+/// The weight to fill into the bin is not necessarily the weight of the integrand 
+/// in order to allow simple counting (by simply filling a 1). 
+#[derive(Debug)]
+pub struct CallResult<T> {
+    /// Contains the value of the integrand evaluated at a phase space point.
+    pub val: T,
+    /// For each histogram (if present) store both the value of the observable and the weight to be filled in the corresponding bin.
+    pub observables_1d: Option<Vec<(T, T)>>,
 }
 
-pub(crate) trait MutArguments<T>: Arguments<T> {
-    fn x_mut(&mut self) -> &mut [T];
-    fn check(&mut self) -> bool;
+impl<T> CallResult<T> {
+    /// Create a new call result.
+    pub const fn new(val: T, observables_1d: Option<Vec<(T, T)>>) -> Self {
+        Self {
+            val,
+            observables_1d,
+        }
+    }
 }
 
 /// Trait which every integrand must implement.
-pub trait Integrand<T> {
-    /// Calculates the value of the integrand as a numerical value of the type `T` from `args.x()`,
-    /// which has as many random numbers as specified by `dim()`.
-    fn call(&mut self, args: &mut impl Arguments<T>) -> T;
+pub trait Integrand<T>: Send + Sync {
+    /// Calculates the value of the integrand from a point `x` on the
+    /// hypercube which has as many random numbers as specified by `dim()`.
+    fn call(&self, x: Vec<T>) -> CallResult<T>;
 
     /// Returns how many random numbers are needed by the integrand.
     fn dim(&self) -> usize;
 
-    /// Returns the histograms that should be filled during integration. If the provided method is
-    /// used no histograms are created.
-    fn histograms(&self) -> Vec<HistogramSpecification<T>> {
-        Vec::new()
+    /// Defines the one-dimensional histograms to be created
+    /// 
+    /// If histograms are requested, their corresponding observables and bin contents 
+    /// have to be computed during while calling `call` and returned as part of the result.
+    fn histograms_1d(&self) -> Option<Vec<HistogramSpecification<T>>> {
+        None
     }
 }
 
@@ -58,7 +65,8 @@ pub trait BasicEstimators<T: Float> {
     }
 }
 
-pub(crate) trait Updateable<T> {
+/// Everything that needs to be updated.
+pub trait Updateable<T> {
     /// Update this estimator with `value`.
     fn update(&mut self, value: T);
 }
@@ -78,10 +86,28 @@ pub trait Estimators<T: Float>: BasicEstimators<T> {
 }
 
 /// A struct implementing the `BasicEstimator<T>` trait.
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize, Serialize, Clone, Debug)]
 pub struct MeanVar<T> {
     mean: T,
     var: T,
+}
+
+impl<T: std::ops::Add<Output = T>> Add for MeanVar<T> {
+    type Output = Self;
+
+    fn add(self, other: Self) -> Self {
+        Self {
+            mean: self.mean + other.mean,
+            var: self.var + other.var,
+        }
+    }
+}
+
+impl<T: std::ops::Add<Output = T> + AddAssign> AddAssign for MeanVar<T> {
+    fn add_assign(&mut self, other: Self) {
+        self.mean += other.mean;
+        self.var += other.var;
+    }
 }
 
 impl<T> MeanVar<T> {
@@ -101,12 +127,99 @@ impl<T: Float> BasicEstimators<T> for MeanVar<T> {
     }
 }
 
+/// HistogramEstimators that are temporary
+#[derive(Debug, std::cmp::PartialEq, Clone)]
+pub struct HistogramEstimatorsAccumulator<T> {
+    bin_contents: Vec<(T, T)>,
+    limits: HistogramSpecification<T>,
+}
+
+impl<T: Float> HistogramEstimatorsAccumulator<T> {
+    /// With empty bins
+    pub fn with_empty_bins(bins: usize, limits: HistogramSpecification<T>) -> Self {
+        Self {
+            bin_contents: vec![(T::zero(), T::zero()); bins],
+            limits,
+        }
+    }
+
+    /// Fill specific weights
+    pub fn new(bin_contents: Vec<(T, T)>, limits: HistogramSpecification<T>) -> Self {
+        Self {
+            bin_contents,
+            limits,
+        }
+    }
+
+    /// Get the bin contents
+    pub fn bins(&self) -> &Vec<(T, T)> {
+        &self.bin_contents
+    }
+}
+
+impl<T: Float> Add for HistogramEstimatorsAccumulator<T> {
+    type Output = Self;
+
+    fn add(self, other: Self) -> Self {
+        Self {
+            bin_contents: self
+                .bin_contents
+                .into_iter()
+                .zip(other.bin_contents)
+                .map(|(t1, t2)| (t1.0 + t2.0, t1.1 + t2.1))
+                .collect(),
+            limits: self.limits,
+        }
+    }
+}
+
+impl<T> HistogramFiller<T> for HistogramEstimatorsAccumulator<T>
+where
+    T: AddAssign + Float + FromPrimitive,
+{
+    fn fill(&mut self, x: T, value: T) {
+        if !value.is_finite() || value == T::zero() {
+            return;
+        }
+
+        let left = self.limits.left();
+        let right = self.limits.right();
+
+        if x < left || x >= right {
+            return;
+        }
+
+        let bins = T::from_usize(self.limits.bins()).unwrap();
+        let index = ((x - left) / (right - left) * bins).to_usize().unwrap();
+
+        self.bin_contents[index].0 += value;
+        self.bin_contents[index].1 += value * value;
+    }
+}
+
 /// Estimators for histograms.
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize, Serialize, Debug)]
 pub struct HistogramEstimators<T> {
     limits: HistogramSpecification<T>,
     calls: usize,
     mean_var: Vec<MeanVar<T>>,
+}
+
+impl<T: std::ops::Add<Output = T>> Add for HistogramEstimators<T> {
+    type Output = Self;
+
+    fn add(self, other: Self) -> Self {
+        Self {
+            limits: self.limits,
+            calls: self.calls + other.calls,
+            mean_var: self
+                .mean_var
+                .into_iter()
+                .zip(other.mean_var)
+                .map(|(a, b)| a + b)
+                .collect::<Vec<_>>(),
+        }
+    }
 }
 
 impl<T: Copy> HistogramEstimators<T> {
@@ -120,7 +233,8 @@ impl<T> HistogramEstimators<T>
 where
     T: AddAssign + Float + FromPrimitive,
 {
-    fn new(calls: usize, limits: HistogramSpecification<T>, bins: Vec<(T, T)>) -> Self {
+    /// New histogram estimator
+    pub fn new(calls: usize, limits: HistogramSpecification<T>, bins: Vec<(T, T)>) -> Self {
         Self {
             calls,
             limits,
@@ -142,12 +256,13 @@ impl<T> BasicEstimators<T> for HistogramEstimators<T>
 where
     T: Float,
 {
+    /// Get mean
     fn mean(&self) -> T {
         self.mean_var
             .iter()
             .fold(T::zero(), |mean, x| mean + x.mean())
     }
-
+    /// Get variance
     fn var(&self) -> T {
         self.mean_var.iter().fold(T::zero(), |var, x| var + x.var())
     }
@@ -156,11 +271,11 @@ where
 /// Trait whose implementers lets one fill histograms.
 pub trait HistogramFiller<T> {
     /// In the histogram with index `hist` fill the bin that contains `x` with `value`.
-    fn fill(&mut self, hist: usize, x: T, value: T);
+    fn fill(&mut self, x: T, value: T);
 }
 
 /// Everything Monte Carlo integrators need to know about histograms.
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize, Serialize, Clone, Debug, PartialEq)]
 pub struct HistogramSpecification<T> {
     left: T,
     right: T,
@@ -170,7 +285,7 @@ pub struct HistogramSpecification<T> {
     y_label: String,
 }
 
-impl<T: Copy> HistogramSpecification<T> {
+impl<T: Copy + Float + AddAssign + FromPrimitive> HistogramSpecification<T> {
     /// Constructs a one-dimensional histogram, in which the range from `left` (inclusive) to
     /// `right` (exclusive) is subdivided into `bins` number of bins.
     pub fn new(left: T, right: T, bins: usize) -> Self {
@@ -234,16 +349,24 @@ impl<T: Copy> HistogramSpecification<T> {
     pub fn y_label(&self) -> &String {
         &self.y_label
     }
+
+    /// From the specification, construct and empty histogram estimator
+    fn get_empty_accumulator(&self) -> HistogramEstimatorsAccumulator<T>
+    where
+        T: Float,
+    {
+        HistogramEstimatorsAccumulator::with_empty_bins(self.bins(), self.clone())
+    }
 }
 
-/// A checkpoint saves the state of a generator after an iteration. Checkpoints can be used to
-/// restart or resume iterations.
-#[derive(Deserialize, Serialize)]
+/// A checkpoint saves the state of a generator after an iteration.
+/// Checkpoints can be used to restart or resume iterations.
+#[derive(Deserialize, Serialize, Debug)]
 pub struct Checkpoint<T, R, E> {
     rng_before: R,
     rng_after: R,
     estimators: E,
-    histograms: Vec<HistogramEstimators<T>>,
+    histograms: Option<Vec<HistogramEstimators<T>>>, //Vec<HistogramEstimators<T>>
 }
 
 impl<T, R, E> Checkpoint<T, R, E>
@@ -251,29 +374,25 @@ where
     T: AddAssign + Float + FromPrimitive,
     E: Estimators<T>,
 {
-    /// Constructor.
+    /// Create a new checkpoint
     pub(crate) fn new(
         rng_before: R,
         rng_after: R,
         estimators: E,
-        limits: Vec<HistogramSpecification<T>>,
-        histograms: Vec<Vec<(T, T)>>,
+        // limits: Option(Vec<HistogramSpecification<T>>),
+        histograms: Option<Vec<HistogramEstimators<T>>>, // Vec<Vec<(T, T)>>
     ) -> Self {
-        let calls = estimators.calls();
-
+        let _calls = estimators.calls();
         Self {
             rng_before,
             rng_after,
             estimators,
-            histograms: histograms
-                .into_iter()
-                .zip(limits.into_iter())
-                .map(move |(h, l)| HistogramEstimators::new(calls, l, h))
-                .collect(),
+            // limits,
+            histograms,
         }
     }
 
-    /// Returns the random number generator that was to generate this checkpoint.
+    /// Returns the random number generator that was used to generate this checkpoint.
     pub fn rng_before(&self) -> &R {
         &self.rng_before
     }
@@ -289,112 +408,124 @@ where
     }
 
     /// Returns the histograms generated during this iteration.
-    pub fn histograms(&self) -> &Vec<HistogramEstimators<T>> {
+    pub fn histograms(&self) -> &Option<Vec<HistogramEstimators<T>>> {
         &self.histograms
     }
 }
 
-struct Accumulator<T, A, E> {
-    args: A,
+/// Accumulate results from different threads.
+#[derive(Debug, Clone)]
+pub struct Accumulator<T, E> {
     estimators: E,
-    limits: Vec<HistogramSpecification<T>>,
-    histograms: Vec<Vec<(T, T)>>,
+    limits_1d: Option<Vec<HistogramSpecification<T>>>,
+    histograms_1d: Option<Vec<HistogramEstimatorsAccumulator<T>>>,
 }
 
-impl<T, A, E> Arguments<T> for Accumulator<T, A, E>
+impl<T, E> Add for Accumulator<T, E>
 where
-    T: AddAssign + Float + FromPrimitive,
-    A: Arguments<T>,
+    T: Float,
+    E: std::ops::Add<Output = E>,
 {
-    fn weight(&mut self) -> T {
-        self.args.weight()
-    }
+    type Output = Self;
 
-    fn x(&self) -> &[T] {
-        self.args.x()
-    }
-
-    fn histo_filler(&mut self) -> Option<&mut dyn HistogramFiller<T>> {
-        if self.histograms.is_empty() {
-            None
-        } else {
-            Some(self)
-        }
-    }
-}
-
-impl<T, A, E> HistogramFiller<T> for Accumulator<T, A, E>
-where
-    T: AddAssign + Float + FromPrimitive,
-    A: Arguments<T>,
-{
-    fn fill(&mut self, hist: usize, x: T, value: T) {
-        if !value.is_finite() || value == T::zero() {
-            return;
-        }
-
-        let left = self.limits[hist].left();
-        let right = self.limits[hist].right();
-
-        if x < left || x >= right {
-            return;
-        }
-
-        let bins = T::from_usize(self.limits[hist].bins()).unwrap();
-        let index = ((x - left) / (right - left) * bins).to_usize().unwrap();
-        let value = value * self.args.weight();
-
-        self.histograms[hist][index].0 += value;
-        self.histograms[hist][index].1 += value * value;
-    }
-}
-
-impl<T, A, E> Accumulator<T, A, E>
-where
-    T: AddAssign + Float + FromPrimitive,
-    A: MutArguments<T>,
-    E: Estimators<T> + Updateable<T>,
-{
-    fn new(args: A, estimators: E, limits: Vec<HistogramSpecification<T>>) -> Self {
-        Self {
-            args,
-            estimators,
-            histograms: limits
-                .iter()
-                .map(|l| vec![(T::zero(), T::zero()); l.bins()])
-                .collect(),
-            limits,
-        }
-    }
-
-    fn perform_calls<R>(
-        mut self,
-        calls: usize,
-        _total_calls: usize,
-        rng: &mut R,
-        int: &mut impl Integrand<T>,
-    ) -> Checkpoint<T, R, E>
-    where
-        R: Clone + Rng,
-        Standard: Distribution<T>,
-    {
-        let rng_before = rng.clone();
-
-        for _ in 0..calls {
-            self.args.x_mut().iter_mut().for_each(|x| *x = rng.gen());
-
-            if self.args.check() {
-                let value = int.call(&mut self);
-                self.estimators.update(value);
+    fn add(self, other: Self) -> Self {
+        let histo_sum = match self.histograms_1d {
+            None => {
+                assert!(other.histograms_1d.is_none());
+                None
             }
-        }
+            Some(histos) => {
+                assert!(other.histograms_1d.is_some());
+                Some(
+                    histos
+                        .into_iter()
+                        .zip(other.histograms_1d.unwrap())
+                        .map(|(a, b)| a + b)
+                        .collect(),
+                )
+            }
+        };
 
-        Checkpoint::new(
-            rng_before,
-            rng.clone(),
-            self.estimators,
-            self.limits,
-            self.histograms,
+        Self {
+            estimators: self.estimators + other.estimators,
+            histograms_1d: histo_sum,
+            limits_1d: self.limits_1d,
+        }
+    }
+}
+
+impl<T, E> Accumulator<T, E>
+where
+    T: AddAssign + Float + FromPrimitive + std::fmt::Debug,
+    // A: MutArguments<T>,
+    E: Estimators<T> + Default + Updateable<T> + std::fmt::Debug,
+{
+    /// Create new accumulator
+    fn new(
+        estimators: E,
+        histograms_1d: Option<Vec<HistogramEstimatorsAccumulator<T>>>,
+        limits_1d: Option<Vec<HistogramSpecification<T>>>,
+    ) -> Self {
+        Self {
+            estimators,
+            histograms_1d,
+            limits_1d,
+        }
+    }
+
+    /// Create empty accumulator
+    pub fn empty(limits_1d: Option<Vec<HistogramSpecification<T>>>) -> Self {
+        Self {
+            estimators: E::default(),
+            histograms_1d: match &limits_1d {
+                &None => None,
+                Some(limits) => Some(limits.iter().map(|l| l.get_empty_accumulator()).collect()),
+            },
+            limits_1d,
+        }
+    }
+
+    /// Get estimators stored in the accumulator.
+    pub fn get_estimators(&self) -> &E {
+        &self.estimators
+    }
+
+    /// Get histograms stored in the accumulator.
+    pub fn get_histograms_1d(&self) -> &Option<Vec<HistogramEstimatorsAccumulator<T>>> {
+        &self.histograms_1d
+    }
+
+    /// Get empty copy of the accumulator.
+    pub fn get_empty_accumulator(&self) -> Self {
+        Self::empty(self.limits_1d.clone())
+    }
+
+    /// Add call result to the accumulator.
+    pub fn add_call_result(&mut self, call_result: CallResult<T>) -> Self {
+        let CallResult {
+            val,
+            observables_1d,
+        } = call_result;
+
+        let mut estimators = E::default();
+        estimators.update(val);
+        Self::new(
+            estimators,
+            match &self.limits_1d {
+                None => None,
+                Some(limits) => Some(
+                    limits
+                        .iter()
+                        .zip(observables_1d.unwrap())
+                        .map(|(h, (o, weight))| {
+                            let mut hist = h.get_empty_accumulator();
+                            hist.fill(o, weight);
+                            hist
+                        })
+                        .collect(),
+                ),
+            },
+            self.limits_1d.clone(),
         )
     }
 }
@@ -429,19 +560,44 @@ where
     }
 }
 
-pub(crate) fn make_chkpt<T, R, E>(
-    args: impl MutArguments<T>,
-    estimators: E,
-    calls: usize,
-    total_calls: usize,
-    rng: &mut R,
-    int: &mut impl Integrand<T>,
-) -> Checkpoint<T, R, E>
-where
-    T: AddAssign + Float + FromPrimitive,
-    E: Estimators<T> + Updateable<T>,
-    R: Clone + Rng,
-    Standard: Distribution<T>,
-{
-    Accumulator::new(args, estimators, int.histograms()).perform_calls(calls, total_calls, rng, int)
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_mean_var_add() {
+        let mv_1 = MeanVar::<f64>::new(1.1, 0.5);
+        let mv_2 = MeanVar::<f64>::new(5.3, 1.2);
+        let sum = mv_1 + mv_2;
+
+        assert_eq!(sum.clone().mean(), 6.4);
+        assert_eq!(sum.clone().var(), 1.7);
+        assert_eq!(sum.std(), 1.7.sqrt());
+    }
+
+    #[test]
+    fn test_mean_var_add_assign() {
+        let mut mv_1 = MeanVar::<f64>::new(1.1, 0.5);
+        mv_1 += MeanVar::<f64>::new(5.3, 1.2);
+
+        assert_eq!(mv_1.clone().mean(), 6.4);
+        assert_eq!(mv_1.clone().var(), 1.7);
+        assert_eq!(mv_1.std(), 1.7.sqrt());
+    }
+
+    #[test]
+    fn add_histogram_estimators() {
+        let hs = HistogramSpecification::with_labels(0.0, 10.0, 5, "dummy_histogram", "x", "y");
+
+        let mut h1 = hs.get_empty_accumulator();
+        let mut h2 = hs.get_empty_accumulator();
+        h1.fill(1.1, 2.0);
+        h2.fill(3.2, 4.0);
+        let sum = h1 + h2;
+        let bin_contents = sum.bins();
+        assert_eq!(bin_contents[0].0, 2.0);
+        assert_eq!(bin_contents[0].1, 4.0);
+        assert_eq!(bin_contents[1].0, 4.0);
+        assert_eq!(bin_contents[1].1, 16.0);
+    }
 }

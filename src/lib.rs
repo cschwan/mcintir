@@ -3,7 +3,7 @@
 
 //! The crate `mcintir` provides [Monte Carlo integration] routines, which allow to efficiently
 //! approximate definite multi-dimensional [integrals]. This crate is a redesign and successor of
-//! the library [`hep-mc`]. The pronunciation of `mcintir` is the same as of the name MacIntyre in
+//! the library [`hep-mc`]. The pronunciation of `mcintir` is the same as of the name `MacIntyre` in
 //! English.
 //!
 //! # Features
@@ -69,6 +69,6 @@
 //! [`hep-mc`]: https://github.com/cschwan/hep-mc
 
 pub mod core;
-pub mod plain;
+pub mod integrators;
 
 pub use crate::core::*;
