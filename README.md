@@ -10,6 +10,48 @@ offers several Monte Carlo integrators. The following are implemented:
 This library is a rewrite of the C++ library [`hep-mc`][hep-mc] and will
 supersede it.
 
+# Building
+
+`mcintir` requires the Rust compiler to be available. 
+Instructions on how to install it can be found at on the 
+`[Rust website](https://www.rust-lang.org/tools/install)`.
+
+The library can be build by running
+
+```sh
+> cargo build [--release]
+```
+
+The `release` option can be used to optimize the performance at the cost of 
+larger compile times.
+
+# Examples
+
+`mcintir` comes with a set of example programs showcasing the usage of the library.
+
+They can be run with
+
+```sh
+> cargo build [--release] --examples plain
+```
+
+# Tests
+
+Unit, integration and doc tests can be run with 
+
+```sh
+cargo test [--release]
+```
+
+# Documentation
+
+`mcinitir`'s documentation features `LaTeX` formulas and therefore its generation is slightly different from the 
+usual case. It can be generated through
+
+```sh
+> RUSTDOCFLAGS="--html-in-header katex-header.html" cargo doc [--release] [--no-deps] [--open]
+```
+
 # Discussion
 
 You can find various channels for discussion at
