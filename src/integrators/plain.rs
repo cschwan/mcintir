@@ -101,6 +101,9 @@ where
 /// Check point for plain integrator
 type PlainCheckpoint<T, R> = Checkpoint<T, R, PlainEstimators<T>>;
 
+/// Convenience type definition.
+type PlainAccumulator<T> = Accumulator<T, PlainEstimators<T>>;
+
 /// Perform the integration
 pub fn integrate<T, R>(
     int: &impl Integrand<T>,
@@ -116,7 +119,6 @@ where
     let mut check_points: Vec<PlainCheckpoint<T, R>> = Vec::with_capacity(iterations.len());
 
     let random_numbers_per_call = int.dim();
-    let mut accumulator = Accumulator::<_, PlainEstimators<_>>::empty(int.histograms_1d());
 
     // Create the accumulator
     for calls in iterations {
@@ -141,45 +143,38 @@ where
                     .take(random_numbers_per_call)
                     .collect::<Vec<_>>();
 
-                // Evaluate the integrand on the point & update the estimators & fill the histogramsI
-                accumulator
-                    .get_empty_accumulator()
-                    .add_call_result(int.call(x))
+                PlainAccumulator::empty(int.histograms_1d()).add_call_result(int.call(x))
             })
             // Combine the estimators
-            .reduce(|| accumulator.get_empty_accumulator(), |a, b| a + b);
+            .reduce(
+                || PlainAccumulator::empty(int.histograms_1d()),
+                |a, b| a + b,
+            );
 
         // This is ugly. Will the compiler take care of this?
-        let mut rng_after = rng.clone();
+        let mut rng_after = rng_before.clone();
         for _ in 0..(iterations.iter().sum::<usize>()) {
             let _ = rng_after.gen();
         }
 
-        accumulator = accumulator + accumulator_iteration;
-
-        let histograms = match accumulator.get_histograms_1d() {
-            None => None,
-            Some(ref histos) => Some(
-                histos
-                    .clone()
-                    .iter()
-                    // TODO: Can we get rid of this unwrap?
-                    .zip(int.histograms_1d().unwrap())
-                    .map(|(h, s)| {
-                        HistogramEstimators::new(
-                            accumulator.get_estimators().calls(),
-                            s,
-                            h.bins().clone(),
-                        )
-                    })
-                    .collect(),
-            ),
-        };
+        let histograms = accumulator_iteration
+            .get_histograms_1d()
+            .clone()
+            .iter()
+            .zip(int.histograms_1d())
+            .map(|(h, s)| {
+                HistogramEstimators::new(
+                    accumulator_iteration.get_estimators().calls(),
+                    s,
+                    h.bins().clone(),
+                )
+            })
+            .collect();
 
         check_points.push(PlainCheckpoint::new(
             rng_before,
             rng_after,
-            accumulator.get_estimators().clone(),
+            accumulator_iteration.get_estimators().clone(),
             histograms,
         ));
 

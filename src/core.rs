@@ -7,25 +7,25 @@ use std::fmt::Display;
 use std::ops::{Add, AddAssign};
 
 /// The result of a call to an integrand.
-/// 
-/// It contains the weight of the integrand for the given phase space point 
-/// and for each one-dimensional histogram (if requested, else `None`) contains 
+///
+/// It contains the weight of the integrand for the given phase space point
+/// and for each one-dimensional histogram (if requested, else `None`) contains
 /// both the value of the observable (used to determine the bin in the histogram)
-/// and the weight to be filled into the bin. 
-/// 
-/// The weight to fill into the bin is not necessarily the weight of the integrand 
-/// in order to allow simple counting (by simply filling a 1). 
+/// and the weight to be filled into the bin.
+///
+/// The weight to fill into the bin is not necessarily the weight of the integrand
+/// in order to allow simple counting (by simply filling a 1).
 #[derive(Debug)]
 pub struct CallResult<T> {
     /// Contains the value of the integrand evaluated at a phase space point.
     pub val: T,
     /// For each histogram (if present) store both the value of the observable and the weight to be filled in the corresponding bin.
-    pub observables_1d: Option<Vec<(T, T)>>,
+    pub observables_1d: Vec<(T, T)>,
 }
 
 impl<T> CallResult<T> {
     /// Create a new call result.
-    pub const fn new(val: T, observables_1d: Option<Vec<(T, T)>>) -> Self {
+    pub const fn new(val: T, observables_1d: Vec<(T, T)>) -> Self {
         Self {
             val,
             observables_1d,
@@ -43,11 +43,11 @@ pub trait Integrand<T>: Send + Sync {
     fn dim(&self) -> usize;
 
     /// Defines the one-dimensional histograms to be created
-    /// 
-    /// If histograms are requested, their corresponding observables and bin contents 
+    ///
+    /// If histograms are requested, their corresponding observables and bin contents
     /// have to be computed during while calling `call` and returned as part of the result.
-    fn histograms_1d(&self) -> Option<Vec<HistogramSpecification<T>>> {
-        None
+    fn histograms_1d(&self) -> Vec<HistogramSpecification<T>> {
+        Vec::new()
     }
 }
 
@@ -366,7 +366,7 @@ pub struct Checkpoint<T, R, E> {
     rng_before: R,
     rng_after: R,
     estimators: E,
-    histograms: Option<Vec<HistogramEstimators<T>>>, //Vec<HistogramEstimators<T>>
+    histograms: Vec<HistogramEstimators<T>>, //Vec<HistogramEstimators<T>>
 }
 
 impl<T, R, E> Checkpoint<T, R, E>
@@ -380,7 +380,7 @@ where
         rng_after: R,
         estimators: E,
         // limits: Option(Vec<HistogramSpecification<T>>),
-        histograms: Option<Vec<HistogramEstimators<T>>>, // Vec<Vec<(T, T)>>
+        histograms: Vec<HistogramEstimators<T>>, // Vec<Vec<(T, T)>>
     ) -> Self {
         let _calls = estimators.calls();
         Self {
@@ -408,7 +408,7 @@ where
     }
 
     /// Returns the histograms generated during this iteration.
-    pub fn histograms(&self) -> &Option<Vec<HistogramEstimators<T>>> {
+    pub fn histograms(&self) -> &Vec<HistogramEstimators<T>> {
         &self.histograms
     }
 }
@@ -417,8 +417,8 @@ where
 #[derive(Debug, Clone)]
 pub struct Accumulator<T, E> {
     estimators: E,
-    limits_1d: Option<Vec<HistogramSpecification<T>>>,
-    histograms_1d: Option<Vec<HistogramEstimatorsAccumulator<T>>>,
+    limits_1d: Vec<HistogramSpecification<T>>,
+    histograms_1d: Vec<HistogramEstimatorsAccumulator<T>>,
 }
 
 impl<T, E> Add for Accumulator<T, E>
@@ -429,22 +429,12 @@ where
     type Output = Self;
 
     fn add(self, other: Self) -> Self {
-        let histo_sum = match self.histograms_1d {
-            None => {
-                assert!(other.histograms_1d.is_none());
-                None
-            }
-            Some(histos) => {
-                assert!(other.histograms_1d.is_some());
-                Some(
-                    histos
-                        .into_iter()
-                        .zip(other.histograms_1d.unwrap())
-                        .map(|(a, b)| a + b)
-                        .collect(),
-                )
-            }
-        };
+        let histo_sum = self
+            .histograms_1d
+            .into_iter()
+            .zip(other.histograms_1d)
+            .map(|(a, b)| a + b)
+            .collect();
 
         Self {
             estimators: self.estimators + other.estimators,
@@ -463,8 +453,8 @@ where
     /// Create new accumulator
     fn new(
         estimators: E,
-        histograms_1d: Option<Vec<HistogramEstimatorsAccumulator<T>>>,
-        limits_1d: Option<Vec<HistogramSpecification<T>>>,
+        histograms_1d: Vec<HistogramEstimatorsAccumulator<T>>,
+        limits_1d: Vec<HistogramSpecification<T>>,
     ) -> Self {
         Self {
             estimators,
@@ -474,13 +464,13 @@ where
     }
 
     /// Create empty accumulator
-    pub fn empty(limits_1d: Option<Vec<HistogramSpecification<T>>>) -> Self {
+    pub fn empty(limits_1d: Vec<HistogramSpecification<T>>) -> Self {
         Self {
             estimators: E::default(),
-            histograms_1d: match &limits_1d {
-                &None => None,
-                Some(limits) => Some(limits.iter().map(|l| l.get_empty_accumulator()).collect()),
-            },
+            histograms_1d: limits_1d
+                .iter()
+                .map(|l| l.get_empty_accumulator())
+                .collect(),
             limits_1d,
         }
     }
@@ -491,13 +481,8 @@ where
     }
 
     /// Get histograms stored in the accumulator.
-    pub fn get_histograms_1d(&self) -> &Option<Vec<HistogramEstimatorsAccumulator<T>>> {
+    pub fn get_histograms_1d(&self) -> &Vec<HistogramEstimatorsAccumulator<T>> {
         &self.histograms_1d
-    }
-
-    /// Get empty copy of the accumulator.
-    pub fn get_empty_accumulator(&self) -> Self {
-        Self::empty(self.limits_1d.clone())
     }
 
     /// Add call result to the accumulator.
@@ -511,20 +496,15 @@ where
         estimators.update(val);
         Self::new(
             estimators,
-            match &self.limits_1d {
-                None => None,
-                Some(limits) => Some(
-                    limits
-                        .iter()
-                        .zip(observables_1d.unwrap())
-                        .map(|(h, (o, weight))| {
-                            let mut hist = h.get_empty_accumulator();
-                            hist.fill(o, weight);
-                            hist
-                        })
-                        .collect(),
-                ),
-            },
+            self.limits_1d
+                .iter()
+                .zip(observables_1d)
+                .map(|(h, (o, weight))| {
+                    let mut hist = h.get_empty_accumulator();
+                    hist.fill(o, weight);
+                    hist
+                })
+                .collect(),
             self.limits_1d.clone(),
         )
     }
@@ -553,6 +533,37 @@ where
         println!("iteration {} finished.", iteration);
         println!(
             "this iteration N={} E={} \u{b1} {}",
+            estimators.calls(),
+            estimators.mean(),
+            estimators.std()
+        );
+    }
+}
+
+/// Cumulative callback
+pub struct SimpleCumulativeCallback {}
+
+impl<T, R, E> Callback<T, R, E> for SimpleCumulativeCallback
+where
+    T: AddAssign + Display + Float + FromPrimitive,
+    E: Estimators<T> + std::default::Default + Clone + std::ops::Add<Output = E>,
+{
+    fn print(&self, chkpts: &[Checkpoint<T, R, E>]) {
+        let iteration = chkpts.len() - 1;
+        // Compute the sum of the esimators
+        let estimators: E = chkpts
+            .iter()
+            .map(|chkpt| chkpt.estimators().clone())
+            .fold(E::default(), |a, b| a.clone() + b);
+
+        let estimators_iteration = chkpts[iteration].estimators();
+
+        println!("iteration {} finished.", iteration);
+        println!(
+            "this iteration: N={} E={} \u{b1} {} --- Cumulative: N={} E={} \u{b1} {}",
+            estimators_iteration.calls(),
+            estimators_iteration.mean(),
+            estimators_iteration.std(),
             estimators.calls(),
             estimators.mean(),
             estimators.std()

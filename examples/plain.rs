@@ -40,7 +40,7 @@ impl Integrand<f64> for MyIntegrand {
         let t = x;
         let PhaseSpacePoint { x, weight } = self._generate_psp(t);
         let val = x[0].powi(2) * weight;
-        CallResult::new(val, Some(vec![(x[0], val)]))
+        CallResult::new(val, vec![(x[0], val)])
     }
 
     /// The dimension of the integrand.
@@ -50,19 +50,24 @@ impl Integrand<f64> for MyIntegrand {
         1
     }
 
-    fn histograms_1d(&self) -> Option<Vec<HistogramSpecification<f64>>> {
-        Some(vec![HistogramSpecification::<f64>::new(1.0, 3.0, 10)])
+    fn histograms_1d(&self) -> Vec<HistogramSpecification<f64>> {
+        vec![HistogramSpecification::<f64>::new(1.0, 3.0, 10)]
     }
 }
 
 fn main() {
     // rayon::ThreadPoolBuilder::new().num_threads(1).build_global().unwrap();
-    let callback = SimpleCallback {};
+    let callback = SimpleCumulativeCallback {};
     // Initialize the random number generator.
     let rng = Pcg64::new(0xcafef00dd15ea5e5, 0xa02bdbf7bb3c0a7ac28fa16a64abf96);
     let integrand = MyIntegrand {};
 
-    let check_points = integrate(&integrand, &rng, &callback, &[100_000, 100_000, 100_000, 100_000]);
+    let check_points = integrate(
+        &integrand,
+        &rng,
+        &callback,
+        &[100_000, 100_000, 100_000, 100_000],
+    );
 
     println!("\n---------------------------------");
     let exact = 26. / 3.;
@@ -76,16 +81,15 @@ fn main() {
     println!("Standard devs : {:.4}", std_devs);
 
     println!("\nHistogram:\n");
-    if let Some(histos) = check_points.last().unwrap().histograms() {
-        let histo = &histos[0];
-        println!("\nHistogram mean: {:?}", histo.mean());
-        println!("______________________");
-        println!("\n| bin |  content     |");
-        println!("______________________");
-        let bw = 0.2;
-        for (i, mean) in histos[0].bins().iter().enumerate() {
-            println!("| {:2}  |  {:.8}  |", i + 1, mean.mean() / bw);
-        }
-        println!("______________________");
+
+    let histo = &check_points.last().unwrap().histograms()[0];
+    println!("\nHistogram mean: {:?}", histo.mean());
+    println!("______________________");
+    println!("\n| bin |  content     |");
+    println!("______________________");
+    let bw = 0.2;
+    for (i, mean) in histo.bins().iter().enumerate() {
+        println!("| {:2}  |  {:.8}  |", i + 1, mean.mean() / bw);
     }
+    println!("______________________");
 }
