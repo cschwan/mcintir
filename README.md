@@ -1,4 +1,4 @@
-[![Rust](https://github.com/cschwan/lhapdf/workflows/Rust/badge.svg)](https://github.com/cschwan/lhapdf/actions?query=workflow%3ARust)
+[![Rust](https://github.com/cschwan/mcintir/workflows/Rust/badge.svg)](https://github.com/cschwan/mcintir/actions?query=workflow%3ARust)
 
 # `mcintir` - Monte Carlo integrators in Rust
 
