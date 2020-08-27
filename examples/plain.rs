@@ -2,6 +2,7 @@ use mcintir::core::*;
 use mcintir::integrators::plain::*;
 
 use rand_pcg::Pcg64;
+use rand::Rng;
 
 struct MyIntegrand;
 
@@ -93,11 +94,17 @@ fn main() {
     }
     println!("______________________");
 
+    let mut rng_original = check_points.last().unwrap().rng_after().clone();
+
     // Store the checkpoints to a file
     let serialized = serde_json::to_string(&check_points).unwrap();
 
     // Convert the JSON string back to a Point.
     let deserialized: Vec<Checkpoint<f64, rand_pcg::Lcg128Xsl64, PlainEstimators<f64>>> = serde_json::from_str(&serialized).unwrap();
     
+    let mut rng_deserial = deserialized.last().unwrap().rng_after().clone();
+
+    assert_eq!(rng_original.gen::<f64>(), rng_deserial.gen::<f64>());
+
     println!("{:#?}", deserialized);
 }
