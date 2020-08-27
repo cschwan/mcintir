@@ -92,4 +92,12 @@ fn main() {
         println!("| {:2}  |  {:.8}  |", i + 1, mean.mean() / bw);
     }
     println!("______________________");
+
+    // Store the checkpoints to a file
+    let serialized = serde_json::to_string(&check_points).unwrap();
+
+    // Convert the JSON string back to a Point.
+    let deserialized: Vec<Checkpoint<f64, rand_pcg::Lcg128Xsl64, PlainEstimators<f64>>> = serde_json::from_str(&serialized).unwrap();
+    
+    println!("{:#?}", deserialized);
 }
