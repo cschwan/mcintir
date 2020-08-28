@@ -198,7 +198,7 @@ where
 }
 
 /// Estimators for histograms.
-#[derive(Deserialize, Serialize, Debug)]
+#[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct HistogramEstimators<T> {
     limits: HistogramSpecification<T>,
     calls: usize,
@@ -361,7 +361,7 @@ impl<T: Copy + Float + AddAssign + FromPrimitive> HistogramSpecification<T> {
 
 /// A checkpoint saves the state of a generator after an iteration.
 /// Checkpoints can be used to restart or resume iterations.
-#[derive(Deserialize, Serialize, Debug)]
+#[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct Checkpoint<T, R, E> {
     rng_before: R,
     rng_after: R,
