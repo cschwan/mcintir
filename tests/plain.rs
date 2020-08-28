@@ -1,9 +1,9 @@
 use mcintir::core::*;
 use mcintir::integrators::plain;
 
-use rand_pcg::Pcg64;
 use assert_approx_eq::assert_approx_eq;
 use rand::Rng;
+use rand_pcg::Pcg64;
 use serde::Serialize;
 
 fn assert_eq_rng<R>(lhs: &R, rhs: &R)
@@ -42,12 +42,76 @@ impl Integrand<f64> for MyIntegrand {
     }
 }
 
+fn compare_checkpoints(
+    chkpt: &plain::PlainCheckpoint<f64, rand_pcg::Lcg128Xsl64>,
+    target: &plain::PlainCheckpoint<f64, rand_pcg::Lcg128Xsl64>,
+) {
+    // TOLERANCE to use in floating point comparisons.
+    const TOLERANCE: f64 = 1e-15;
+
+    // we requested 1000 calls
+    assert_eq!(chkpt.estimators().calls(), target.estimators().calls());
+
+    // check the mean
+    assert_approx_eq!(
+        chkpt.estimators().mean(),
+        target.estimators().mean(),
+        TOLERANCE
+    );
+
+    // check the variance
+    assert_approx_eq!(
+        chkpt.estimators().var(),
+        target.estimators().var(),
+        TOLERANCE
+    );
+
+    // there is one histogram
+    assert_eq!(chkpt.histograms().len(), 1);
+
+    assert_approx_eq!(
+        chkpt.histograms()[0].mean(),
+        target.histograms()[0].mean(),
+        TOLERANCE
+    );
+    assert_approx_eq!(
+        chkpt.histograms()[0].var(),
+        target.histograms()[0].var(),
+        TOLERANCE
+    );
+
+    let bins = &chkpt.histograms()[0].bins();
+    let bins_target = &target.histograms()[0].bins();
+
+    assert_eq!(bins.len(), 10);
+
+    assert_approx_eq!(bins[0].mean(), bins_target[0].mean(), TOLERANCE);
+    assert_approx_eq!(bins[1].mean(), bins_target[1].mean(), TOLERANCE);
+    assert_approx_eq!(bins[2].mean(), bins_target[2].mean(), TOLERANCE);
+    assert_approx_eq!(bins[3].mean(), bins_target[3].mean(), TOLERANCE);
+    assert_approx_eq!(bins[4].mean(), bins_target[4].mean(), TOLERANCE);
+    assert_approx_eq!(bins[5].mean(), bins_target[5].mean(), TOLERANCE);
+    assert_approx_eq!(bins[6].mean(), bins_target[6].mean(), TOLERANCE);
+    assert_approx_eq!(bins[7].mean(), bins_target[7].mean(), TOLERANCE);
+    assert_approx_eq!(bins[8].mean(), bins_target[8].mean(), TOLERANCE);
+    assert_approx_eq!(bins[9].mean(), bins_target[9].mean(), TOLERANCE);
+
+    assert_approx_eq!(bins[0].var(), bins_target[0].var(), TOLERANCE);
+    assert_approx_eq!(bins[1].var(), bins_target[1].var(), TOLERANCE);
+    assert_approx_eq!(bins[2].var(), bins_target[2].var(), TOLERANCE);
+    assert_approx_eq!(bins[3].var(), bins_target[3].var(), TOLERANCE);
+    assert_approx_eq!(bins[4].var(), bins_target[4].var(), TOLERANCE);
+    assert_approx_eq!(bins[5].var(), bins_target[5].var(), TOLERANCE);
+    assert_approx_eq!(bins[6].var(), bins_target[6].var(), TOLERANCE);
+    assert_approx_eq!(bins[7].var(), bins_target[7].var(), TOLERANCE);
+    assert_approx_eq!(bins[8].var(), bins_target[8].var(), TOLERANCE);
+    assert_approx_eq!(bins[9].var(), bins_target[9].var(), TOLERANCE);
+}
+
 #[test]
 fn plain_iteration() {
-
     // TOLERANCE to use in floating point comparisons.
-    const TOLERANCE: f64 = 1e-16;
-
+    const TOLERANCE: f64 = 1e-15;
     // The number of calls in the iteration
     const CALLS: usize = 1_000;
 
@@ -55,7 +119,6 @@ fn plain_iteration() {
     let rng_start = rng.clone();
     let chkpt = plain::integrate(&MyIntegrand {}, &rng, &SimpleCallback {}, &[CALLS]).remove(0);
 
-    
     // compare random number generators before iteration
     assert_eq_rng(chkpt.rng_before(), &rng_start);
 
@@ -113,4 +176,46 @@ fn plain_iteration() {
     assert_approx_eq!(bins[7].var(), 2.4509156464831765e-5, TOLERANCE);
     assert_approx_eq!(bins[8].var(), 4.2660976883510006e-5, TOLERANCE);
     assert_approx_eq!(bins[9].var(), 7.530434818429274e-5, TOLERANCE);
+}
+
+#[test]
+fn test_plain_serialization() {
+    // The number of calls in the iteration
+    const CALLS: usize = 1_000;
+    let iterations = &[CALLS, CALLS, CALLS, CALLS, CALLS];
+
+    let rng = Pcg64::new(0xcafef00dd15ea5e5, 0xa02bdbf7bb3c0a7ac28fa16a64abf96);
+
+    // Perform the integration over all the iterations and store the checkpoints
+    let check_points = plain::integrate(
+        &MyIntegrand {},
+        &rng.clone(),
+        &SimpleCallback {},
+        iterations,
+    );
+
+    // Consistency check
+    assert_eq!(check_points.len(), iterations.len());
+
+    // Clone the final result and store it as a target
+    let final_target = check_points.iter().last().unwrap().clone();
+
+    // Restart the integration from each checkpoint and make sure the final result agrees with the
+    // one computed above.
+    check_points
+        .into_iter()
+        .enumerate()
+        .for_each(|(index, cp)| {
+            // Resume the iteration from the given checkpoint
+            let resumed = plain::resume_integration_from_checkpoints(
+                &MyIntegrand {},
+                vec![cp],
+                &SimpleCallback {},
+                &vec![CALLS; iterations.len() - index - 1],
+            )
+            .into_iter()
+            .last()
+            .unwrap();
+            compare_checkpoints(&resumed, &final_target);
+        });
 }
