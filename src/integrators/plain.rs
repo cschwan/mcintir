@@ -104,7 +104,6 @@ pub type PlainCheckpoint<T, R> = Checkpoint<T, R, PlainEstimators<T>>;
 /// Convenience type definition.
 type PlainAccumulator<T> = Accumulator<T, PlainEstimators<T>>;
 
-
 /// Resume integration from a checkpoint
 pub fn resume_integration_from_checkpoints<T, R>(
     int: &impl Integrand<T>,
@@ -132,7 +131,7 @@ where
         // Choose the random number generator.
         // Copy the one provided by the user if it's the first iteration otherwise take the
         // RNG of the previous iteration in its final state.
-        let rng_before =  if check_points.is_empty() {
+        let rng_before = if check_points.is_empty() {
             rng.clone()
         } else {
             check_points.last().unwrap().rng_after().clone()
