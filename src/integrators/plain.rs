@@ -99,10 +99,112 @@ where
 }
 
 /// Check point for plain integrator
-type PlainCheckpoint<T, R> = Checkpoint<T, R, PlainEstimators<T>>;
+pub type PlainCheckpoint<T, R> = Checkpoint<T, R, PlainEstimators<T>>;
 
 /// Convenience type definition.
 type PlainAccumulator<T> = Accumulator<T, PlainEstimators<T>>;
+
+
+/// Resume integration from a checkpoint
+pub fn resume_integration_from_checkpoints<T, R>(
+    int: &impl Integrand<T>,
+    check_points_provided: Vec<PlainCheckpoint<T, R>>,
+    callback: &impl Callback<T, R, PlainEstimators<T>>,
+    iterations: &[usize],
+) -> Vec<PlainCheckpoint<T, R>>
+where
+    T: AddAssign + Float + FromPrimitive + Serialize + Send + std::fmt::Debug + Sync,
+    R: Clone + Rng + Serialize + Send + Sync + std::fmt::Debug,
+    Standard: Distribution<T>,
+{
+    let mut check_points: Vec<PlainCheckpoint<T, R>> =
+        Vec::with_capacity(iterations.len() + check_points_provided.len());
+    check_points_provided
+        .into_iter()
+        .for_each(|cp| check_points.push(cp));
+
+    let random_numbers_per_call = int.dim();
+
+    let rng = check_points.iter().last().unwrap().rng_after().clone();
+
+    // Create the accumulator
+    for calls in iterations {
+        // Choose the random number generator.
+        // Copy the one provided by the user if it's the first iteration otherwise take the
+        // RNG of the previous iteration in its final state.
+        let rng_before =  if check_points.is_empty() {
+            rng.clone()
+        } else {
+            check_points.last().unwrap().rng_after().clone()
+        };
+
+        // The estimator for the given iteration
+        let accumulator_iteration = (0..(*calls) as u32)
+            .into_par_iter()
+            .map(|call| {
+                let rng_clone = rng_before.clone();
+                // Provide the random numbers
+                let x = rng_clone
+                    .sample_iter(&Standard)
+                    .skip(call as usize * random_numbers_per_call)
+                    .take(random_numbers_per_call)
+                    .collect::<Vec<_>>();
+
+                PlainAccumulator::empty(int.histograms_1d()).add_call_result(int.call(x))
+            })
+            // Combine the estimators
+            .reduce(
+                || PlainAccumulator::empty(int.histograms_1d()),
+                |a, b| a + b,
+            );
+
+        // This is ugly. Will the compiler take care of this?
+        let mut rng_after = rng_before.clone();
+        for _ in 0..*calls {
+            let _ = rng_after.gen();
+        }
+
+        let histograms = accumulator_iteration
+            .get_histograms_1d()
+            .clone()
+            .iter()
+            .zip(int.histograms_1d())
+            .map(|(h, s)| {
+                HistogramEstimators::new(
+                    accumulator_iteration.get_estimators().calls(),
+                    s,
+                    h.bins().clone(),
+                )
+            })
+            .collect();
+
+        check_points.push(PlainCheckpoint::new(
+            rng_before,
+            rng_after,
+            accumulator_iteration.get_estimators().clone(),
+            histograms,
+        ));
+
+        callback.print(&check_points);
+    }
+
+    check_points
+}
+
+/// Resume integration from a checkpoint
+pub fn resume_integration_from_checkpoint<T, R>(
+    int: &impl Integrand<T>,
+    check_point_provided: PlainCheckpoint<T, R>,
+    callback: &impl Callback<T, R, PlainEstimators<T>>,
+    iterations: &[usize],
+) -> Vec<PlainCheckpoint<T, R>>
+where
+    T: AddAssign + Float + FromPrimitive + Serialize + Send + std::fmt::Debug + Sync,
+    R: Clone + Rng + Serialize + Send + Sync + std::fmt::Debug,
+    Standard: Distribution<T>,
+{
+    resume_integration_from_checkpoints(int, vec![check_point_provided], callback, iterations)
+}
 
 /// Perform the integration
 pub fn integrate<T, R>(
@@ -153,7 +255,7 @@ where
 
         // This is ugly. Will the compiler take care of this?
         let mut rng_after = rng_before.clone();
-        for _ in 0..(iterations.iter().sum::<usize>()) {
+        for _ in 0..*calls {
             let _ = rng_after.gen();
         }
 
