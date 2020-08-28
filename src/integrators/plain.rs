@@ -1,4 +1,58 @@
 //! Contains the PLAIN integrator as well as supporting structs and functions.
+//! 
+//! # Example
+//! 
+//! ```rust
+//! use mcintir::core::*;
+//! use mcintir::integrators::plain::*;
+//! use rand_pcg::Pcg64;
+//! use assert_approx_eq::assert_approx_eq;
+//! 
+//! struct MyIntegrand;
+//! 
+//! /// Integrating the function x^2 from x=1 to x=3
+//! /// Which gives the result: 26/3
+//! impl Integrand<f64> for MyIntegrand {
+//!     /// Call the integrand.
+//!     fn call(&self, x: Vec<f64>) -> CallResult<f64> {
+//!         // Jacobian to map from the hypercube into the range [1,3]
+//!         let phase_space_weight = (3.0 - 1.0);
+//!         let psp = (3.0 - 1.0) * x[0] + 1.0;
+//!         let val = psp.powi(2) * phase_space_weight;
+//!         CallResult::new(val, vec![(x[0], val)])
+//!     }
+//! 
+//!     /// This method is called by the integrator to decide how many random numbers to generate.
+//!     fn dim(&self) -> usize {
+//!         1
+//!     }
+//! 
+//!     /// One histograms with 10 bins spanning the range [1.0, 3.0]
+//!     fn histograms_1d(&self) -> Vec<HistogramSpecification<f64>> {
+//!         vec![HistogramSpecification::<f64>::new(1.0, 3.0, 10)]
+//!     }
+//! }
+//!     
+//! fn main() {
+//! 
+//!     let callback = SimpleCumulativeCallback {};
+//!     // Initialize the random number generator.
+//!     let rng = Pcg64::new(0xcafef00dd15ea5e5, 0xa02bdbf7bb3c0a7ac28fa16a64abf96);
+//!     let integrand = MyIntegrand {};
+//!
+//!     let check_point = integrate(
+//!         &integrand,
+//!         &rng,
+//!         &callback,
+//!         // One iteration with 500 calls
+//!         &[500],
+//!     ).remove(0);
+//!
+//!     assert_eq!(check_point.histograms().len(), 1);
+//!     assert_eq!(check_point.histograms()[0].bins().len(), 10);
+//!
+//! }
+//! ```
 
 use num_traits::{Float, FromPrimitive};
 use rand::distributions::{Distribution, Standard};
@@ -98,13 +152,21 @@ where
     }
 }
 
-/// Check point for plain integrator
+/// Check point for plain integrator.
 pub type PlainCheckpoint<T, R> = Checkpoint<T, R, PlainEstimators<T>>;
 
-/// Convenience type definition.
+// Convenience type definition.
 type PlainAccumulator<T> = Accumulator<T, PlainEstimators<T>>;
 
-/// Resume integration from a checkpoint
+/// Resume integration from a set of checkpoints.
+/// 
+/// Given a checkpoint file storing the information of previously 
+/// gathered integration iterations, the integration of the integrand
+/// `int` can be resumed by providing the check points and the number
+/// of calls to be performed for each additional iteration.
+/// 
+/// The `callback` function determines how the information of intermediate
+/// steps is presented to the user as soon as it becomes available. 
 pub fn resume_integration_from_checkpoints<T, R>(
     int: &impl Integrand<T>,
     check_points_provided: Vec<PlainCheckpoint<T, R>>,
@@ -205,7 +267,13 @@ where
     resume_integration_from_checkpoints(int, vec![check_point_provided], callback, iterations)
 }
 
-/// Perform the integration
+/// Perform the integration.
+/// 
+/// Integrate the integrand `int` using random numbers provided by the generator `rng`.
+/// The `callback` function determines how intermediate results are provided to the user 
+/// as soon as they become available.
+/// 
+/// `iterations` is a slice that contains, for each iteration the number of calls to the integrand.
 pub fn integrate<T, R>(
     int: &impl Integrand<T>,
     rng: &R,
