@@ -571,6 +571,17 @@ where
     }
 }
 
+/// Callback function that act as a sink and does nothing
+pub struct SinkCallback;
+
+impl<T, R, E> Callback<T, R, E> for SinkCallback
+where
+    T: AddAssign + Display + Float + FromPrimitive,
+    E: Estimators<T> + std::default::Default + Clone + std::ops::Add<Output = E>,
+{
+    fn print(&self, _: &[Checkpoint<T, R, E>]) {}
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
