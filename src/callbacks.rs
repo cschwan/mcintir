@@ -3,7 +3,12 @@ use crate::core::estimators::Estimators;
 use crate::core::Checkpoint;
 use num_traits::{Float, FromPrimitive};
 use std::fmt::Display;
+use std::fs::OpenOptions;
+use std::io::Write;
 use std::ops::AddAssign;
+use std::path::Path;
+
+use serde::Serialize;
 
 /// Trait for implementing callbacks for iterative MC algorithms
 pub trait Callback<T, R, E>
@@ -88,5 +93,41 @@ where
             cumulative.mean(),
             cumulative.std()
         );
+    }
+}
+
+/// A callback function that serializes the checkpoints and
+/// stores them in a file.
+pub struct FileWriterCallback<P> {
+    path: P,
+}
+
+impl <P: AsRef<Path>> FileWriterCallback<P> {
+    /// Create a new `FileWriterCallback` by specifying the
+    /// path to the checkpoint file.
+    pub fn new(path: P) -> Self {
+        Self {path}
+    }
+}
+
+impl<T, R, E, P> Callback<T, R, E> for FileWriterCallback<P>
+where
+    T: AddAssign + Display + Float + FromPrimitive + Serialize,
+    E: Clone + Estimators<T> + std::default::Default + std::ops::Add<Output = E> + Serialize,
+    R: Clone + Serialize,
+    P: AsRef<Path>,
+{
+    fn print(&self, chkpts: &[Checkpoint<T, R, E>]) {
+        let file = OpenOptions::new()
+            .write(true)
+            .open(&self.path)
+            .expect("Unable to open checkpoint file.");
+
+        writeln!(
+            &file,
+            "{}",
+            serde_json::to_string(&chkpts).expect("Unable to write checkpoints to string.")
+        )
+        .expect("Unable to write serialized checkpoint to file.");
     }
 }

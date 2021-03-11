@@ -17,7 +17,6 @@ pub trait BasicEstimators<T: Float> {
     }
 }
 
-
 /// More estimators.
 pub trait Estimators<T: Float>: BasicEstimators<T> {
     /// Returns the number of times $N$, the integrand has been called.

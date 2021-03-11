@@ -224,7 +224,6 @@ where
     }
 }
 
-
 /// Estimators for histograms.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct HistogramEstimators<T: Copy> {

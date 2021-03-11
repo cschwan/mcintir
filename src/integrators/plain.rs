@@ -8,10 +8,7 @@ use num_traits::{Float, FromPrimitive};
 use rand::distributions::{Distribution, Standard};
 use rand::Rng;
 use serde::{Deserialize, Serialize};
-use std::fs::OpenOptions;
-use std::io::Write;
 use std::ops::{Add, AddAssign};
-use std::path::Path;
 
 use crossbeam as cb;
 
@@ -271,77 +268,16 @@ where
     checkpoints
 }
 
-/// Integrate the `integrate` using `n_cores` cores and store checkpoints.
-///
-/// The random number generator in its initial state is provided in `rng`
-/// together with a `callback` function that prints estimates after each
-/// iteration.
-/// The number of calls of the integrand per iteration is stored in the slice
-/// `iterations`.
-///
-/// After each iteration, the resulting checkpoint will be written to the
-/// file located at `path`. If `append` is `true`, instead of overwriting the
-/// content of the file, new results will be appended. This can be useful, when
-/// the iteration is restarted from checkpoints and newly generated results
-/// should be stored as well.
-pub fn integrate_chkpt_store<T, R, I, P>(
-    integrand: &I,
-    rng: &R,
-    callback: &impl Callback<T, R, PlainEstimators<T>>,
-    n_cores: usize,
-    iterations: &[usize],
-    path: P,
-    append: bool,
-) -> Vec<Checkpoint<T, R, PlainEstimators<T>>>
-where
-    I: Integrand<T>,
-    T: Serialize + Float + AddAssign + FromPrimitive + Send + Sync + Clone + std::fmt::Debug,
-    R: Clone + Rng + Send + Sync + Serialize,
-    Standard: Distribution<T>,
-    P: AsRef<Path>,
-{
-    // storage for the results of each iteration
-    let mut checkpoints = Vec::with_capacity(iterations.len());
-
-    let mut rng_global = rng.clone();
-
-    // let file = File::create(path).expect("Unable to create a file for storing checkpoints!");
-    let file = OpenOptions::new()
-        .write(true)
-        .append(append)
-        .open(path)
-        .expect("Unable to open checkpoint file.");
-
-    // Integration iterations are treated sequentially
-    for calls in iterations {
-        let checkpoint = integrate_iteration(integrand, &rng_global, n_cores, *calls);
-        // synchronize the random number generation
-        rng_global = checkpoint.rng_after().clone();
-
-        writeln!(
-            &file,
-            "{}",
-            serde_json::to_string(&checkpoint).expect("Unable to write checkpoint to string.")
-        )
-        .expect("Unable to write serialized checkpoint to file.");
-
-        checkpoints.push(checkpoint);
-        callback.print(&checkpoints);
-    }
-
-    checkpoints
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::callbacks::SinkCallback;
+    use crate::callbacks::{FileWriterCallback, SinkCallback};
     use crate::integrators::plain;
     use rand::Rng;
     use rand_pcg::Pcg64;
     use serde::Serialize;
-    use std::io::{BufRead, BufReader};
     use tempfile::NamedTempFile;
+    use std::fs::read_to_string;
 
     use assert_approx_eq::assert_approx_eq;
 
@@ -483,8 +419,6 @@ mod tests {
 
     #[test]
     fn test_write_checkpoint_to_file() {
-        // define a callback function
-        let callback = SinkCallback {};
 
         // create a temporary file to write to
         let file = NamedTempFile::new().unwrap();
@@ -492,25 +426,23 @@ mod tests {
         // define the calls per iteration
         let iterations = vec![1000, 100];
 
+        // define a callback function
+        let callback = FileWriterCallback::new(&path);
+
         // create a random number generator
         let rng = Pcg64::new(0xcafef00dd15ea5e5, 0xa02bdbf7bb3c0a7ac28fa16a64abf96);
 
         // perform a full integration over the four iterations
-        let original = plain::integrate_chkpt_store(
+        let original = plain::integrate(
             &MyIntegrand {},
             &rng.clone(),
             &callback,
             1,
             &iterations,
-            &path,
-            false,
         );
 
-        let chkpts: Vec<Checkpoint<f64, Pcg64, PlainEstimators<f64>>> = BufReader::new(file)
-            .lines()
-            .map(|l| l.expect("Problem reading line from file."))
-            .map(|l| serde_json::from_str(&l).expect("Unable to deserialize checkpoint from json."))
-            .collect();
+        let chkpt_file = read_to_string(&path).expect("Unable to read checkpoint file");
+        let chkpts: Vec<Checkpoint<f64, Pcg64, PlainEstimators<f64>>> = serde_json::from_str(&chkpt_file).expect("Unable to deserialize checkpoint from json.");
 
         // make sure all the checkpoints have been written and read
         assert_eq!(original.len(), chkpts.len());
