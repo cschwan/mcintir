@@ -11,14 +11,24 @@ categories = ["science"]
 description = "Monte Carlo Integration In Rust"
 
 [dependencies]
+crossbeam = "0.8"
 num-traits = "0.2"
-rand = { default-features = false, features = ["serde1"], version = "0.7" }
-rand_pcg = { features = ["serde1"], version = "0.2.1" }
+rand = { default-features = false, features = ["serde1"], version = "0.8" }
 serde = { features = ["derive"], version = "1.0" }
 serde_json = "1.0"
+
+[dev-dependencies]
+assert_approx_eq = "1.1.0"
+criterion = "0.3"
+rand_pcg = { features = ["serde1"], version = "0.2.1" }
+tempfile = "3.0"
 
 [package.metadata.docs.rs]
 rustdoc-args = ["--html-in-header", "katex-header.html"]
 
 [[example]]
 name = "plain"
+
+[[bench]]
+name = "plain"
+harness = false
