@@ -46,9 +46,9 @@ where
         name: String,
     ) -> Self {
         // Consistency check of the input.
-        assert_eq!(left.len(), right.len());
-        assert_eq!(left.len(), bins.len());
-        assert_eq!(left.len(), labels.len());
+        debug_assert_eq!(left.len(), right.len());
+        debug_assert_eq!(left.len(), bins.len());
+        debug_assert_eq!(left.len(), labels.len());
         Self {
             left,
             right,
