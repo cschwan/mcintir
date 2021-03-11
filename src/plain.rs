@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::ops::AddAssign;
 
 use crate::core::*;
+use crate::core::estimators::*;
 use crate::callbacks::Callback;
 
 struct PlainArguments<T> {
@@ -167,6 +168,8 @@ where
 #[cfg(test)]
 mod tests {
     use crate::core::*;
+    use crate::core::estimators::*;
+    use crate::callbacks::*;
     use crate::plain;
     use rand::Rng;
     use rand_pcg::Pcg64;

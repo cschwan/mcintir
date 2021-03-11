@@ -1,5 +1,5 @@
 //! Implementation of different callback functions.
-use crate::core::*;
+use crate::core::estimators::Estimators;
 use crate::core::Checkpoint;
 use num_traits::{Float, FromPrimitive};
 
