@@ -2,12 +2,14 @@
 use crate::core::estimators::Estimators;
 use crate::core::Checkpoint;
 use num_traits::{Float, FromPrimitive};
-
 use std::fmt::Display;
 use std::ops::AddAssign;
 
-/// Trait for implementing callbacks for iterative MC algorithms.
-pub trait Callback<T, R, E> {
+/// Trait for implementing callbacks for iterative MC algorithms
+pub trait Callback<T, R, E>
+where
+    T: Copy,
+{
     /// This method is called after each successfully finished iteration and may print information
     /// about it.
     fn print(&self, chkpts: &[Checkpoint<T, R, E>]);
@@ -23,12 +25,12 @@ where
     fn print(&self, _: &[Checkpoint<T, R, E>]) {}
 }
 
-/// Implements `Callback` and simply prints the results of each iteration.
+/// A callback function that prints the result of each individual iteration
 pub struct SimpleCallback {}
 
 impl<T, R, E> Callback<T, R, E> for SimpleCallback
 where
-    T: Float + Display + AddAssign + FromPrimitive,
+    T: AddAssign + Display + Float + FromPrimitive,
     E: Estimators<T>,
 {
     fn print(&self, chkpts: &[Checkpoint<T, R, E>]) {
@@ -54,8 +56,7 @@ pub struct SimpleCumulativeCallback {}
 
 impl<T, R, E> Callback<T, R, E> for SimpleCumulativeCallback
 where
-    // T: AddAssign + Display + Float + FromPrimitive,
-    T: Float + Display + AddAssign + FromPrimitive,
+    T: AddAssign + Display + Float + FromPrimitive,
     E: Clone + Estimators<T> + std::default::Default + std::ops::Add<Output = E>,
     R: Clone,
 {

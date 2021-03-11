@@ -68,8 +68,9 @@
 //! [integrals]: https://en.wikipedia.org/wiki/Integral
 //! [`hep-mc`]: https://github.com/cschwan/hep-mc
 
-pub mod core;
 pub mod callbacks;
-pub mod plain;
+pub mod core;
+pub mod histograms;
+pub mod integrators;
 
 pub use crate::core::*;

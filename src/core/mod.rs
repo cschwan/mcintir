@@ -1,191 +1,31 @@
-//! Core functionality. You don't need to import this modules since all it's public members are
-//! part of the crate namespace.
+//! The core module
 pub mod estimators;
 
+use crate::core::estimators::Estimators;
+use crate::histograms::*;
 use num_traits::{Float, FromPrimitive};
-use rand::distributions::{Distribution, Standard};
-use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::ops::AddAssign;
 
-use crate::core::estimators::*;
-
-/// Argument type every integrand must accept. Since this is a trait, the integrand must accept
-/// (mutable) references to a trait object.
-pub trait Arguments<T> {
-    /// This function allows to fill histograms. Since it's possible there are no histograms, the
-    /// return value is an option.
-    fn histo_filler(&mut self) -> Option<&mut dyn HistogramFiller<T>>;
-
-    /// Returns the weight of for this call.
-    fn weight(&mut self) -> T;
-
-    /// Returns the point of the hypercube $[0,1)^d$ the integrand is evaluated at. The value $d$
-    /// is given by the length of the returned slice.
-    fn x(&self) -> &[T];
-}
-
-pub(crate) trait MutArguments<T>: Arguments<T> {
-    fn x_mut(&mut self) -> &mut [T];
-    fn check(&mut self) -> bool;
-}
-
-/// Trait which every integrand must implement.
-pub trait Integrand<T> {
-    /// Calculates the value of the integrand as a numerical value of the type `T` from `args.x()`,
-    /// which has as many random numbers as specified by `dim()`.
-    fn call(&mut self, args: &mut impl Arguments<T>) -> T;
-
-    /// Returns how many random numbers are needed by the integrand.
+/// Integrand trait
+pub trait Integrand<T: Copy>: Send + Sync {
+    /// Call the integrand with a phase space point.
+    fn call(&self, x: &Vec<T>, h: &mut Vec<HistogramAccumulator<T>>) -> T;
+    /// The dimension of the integrand.
     fn dim(&self) -> usize;
-
-    /// Returns the histograms that should be filled during integration. If the provided method is
-    /// used no histograms are created.
+    /// Definitions of the histograms that should be filled during the integration.
     fn histograms(&self) -> Vec<HistogramSpecification<T>> {
-        Vec::new()
+        vec![]
     }
 }
 
-
-/// Estimators for histograms.
-#[derive(Deserialize, Serialize)]
-pub struct HistogramEstimators<T> {
-    limits: HistogramSpecification<T>,
-    calls: usize,
-    mean_var: Vec<MeanVar<T>>,
-}
-
-impl<T: Copy> HistogramEstimators<T> {
-    /// Returns the estimators for all bins.
-    pub fn bins(&self) -> &Vec<MeanVar<T>> {
-        &self.mean_var
-    }
-}
-
-impl<T> HistogramEstimators<T>
+/// A checkpoint saves the state of the generator after an iteration.
+/// Checkpoints can be used to restart or resume iterations.
+#[derive(Debug, Deserialize, Serialize)]
+pub struct Checkpoint<T, R, E>
 where
-    T: AddAssign + Float + FromPrimitive,
+    T: Copy,
 {
-    fn new(calls: usize, limits: HistogramSpecification<T>, bins: Vec<(T, T)>) -> Self {
-        Self {
-            calls,
-            limits,
-            mean_var: bins
-                .into_iter()
-                .map(|(sum, sumsq)| {
-                    let calls = T::from_usize(calls).unwrap();
-                    MeanVar::new(
-                        sum / calls,
-                        (sumsq - sum * sum / calls) / calls / (calls - T::one()),
-                    )
-                })
-                .collect(),
-        }
-    }
-}
-
-impl<T> BasicEstimators<T> for HistogramEstimators<T>
-where
-    T: Float,
-{
-    fn mean(&self) -> T {
-        self.mean_var
-            .iter()
-            .fold(T::zero(), |mean, x| mean + x.mean())
-    }
-
-    fn var(&self) -> T {
-        self.mean_var.iter().fold(T::zero(), |var, x| var + x.var())
-    }
-}
-
-/// Trait whose implementers lets one fill histograms.
-pub trait HistogramFiller<T> {
-    /// In the histogram with index `hist` fill the bin that contains `x` with `value`.
-    fn fill(&mut self, hist: usize, x: T, value: T);
-}
-
-/// Everything Monte Carlo integrators need to know about histograms.
-#[derive(Deserialize, Serialize)]
-pub struct HistogramSpecification<T> {
-    left: T,
-    right: T,
-    bins: usize,
-    name: String,
-    x_label: String,
-    y_label: String,
-}
-
-impl<T: Copy> HistogramSpecification<T> {
-    /// Constructs a one-dimensional histogram, in which the range from `left` (inclusive) to
-    /// `right` (exclusive) is subdivided into `bins` number of bins.
-    pub fn new(left: T, right: T, bins: usize) -> Self {
-        Self {
-            left,
-            right,
-            bins,
-            name: String::new(),
-            x_label: String::new(),
-            y_label: String::new(),
-        }
-    }
-
-    /// Constructs a one-dimensional histogram, in which the range from `left` (inclusive) to
-    /// `right` (exclusive) is subdivided into `bins` number of bins. The histogram also has a
-    /// `name`, and labels for its two axes: `x_label` and `y_label`.
-    pub fn with_labels(
-        left: T,
-        right: T,
-        bins: usize,
-        name: &str,
-        x_label: &str,
-        y_label: &str,
-    ) -> Self {
-        Self {
-            left,
-            right,
-            bins,
-            name: name.to_string(),
-            x_label: x_label.to_string(),
-            y_label: y_label.to_string(),
-        }
-    }
-
-    /// Returns the left boundary of the binned range.
-    pub fn left(&self) -> T {
-        self.left
-    }
-
-    /// Returns the right boundary of the binned range.
-    pub fn right(&self) -> T {
-        self.right
-    }
-
-    /// Returns the number of bins this histogram has.
-    pub fn bins(&self) -> usize {
-        self.bins
-    }
-
-    /// Returns the name of this histogram.
-    pub fn name(&self) -> &String {
-        &self.name
-    }
-
-    /// Returns the name the x-axis.
-    pub fn x_label(&self) -> &String {
-        &self.x_label
-    }
-
-    /// Returns the name the y-axis.
-    pub fn y_label(&self) -> &String {
-        &self.y_label
-    }
-}
-
-/// A checkpoint saves the state of a generator after an iteration. Checkpoints can be used to
-/// restart or resume iterations.
-#[derive(Deserialize, Serialize)]
-pub struct Checkpoint<T, R, E> {
     rng_before: R,
     rng_after: R,
     estimators: E,
@@ -197,167 +37,97 @@ where
     T: AddAssign + Float + FromPrimitive,
     E: Estimators<T>,
 {
-    /// Constructor.
+    /// Constructor
     pub(crate) fn new(
         rng_before: R,
         rng_after: R,
         estimators: E,
-        limits: Vec<HistogramSpecification<T>>,
-        histograms: Vec<Vec<(T, T)>>,
+        histograms: Vec<HistogramEstimators<T>>,
     ) -> Self {
-        let calls = estimators.calls();
-
         Self {
             rng_before,
             rng_after,
             estimators,
-            histograms: histograms
-                .into_iter()
-                .zip(limits.into_iter())
-                .map(move |(h, l)| HistogramEstimators::new(calls, l, h))
-                .collect(),
+            histograms,
         }
     }
 
-    /// Returns the random number generator that was to generate this checkpoint.
+    /// Returns the random number generator before generation of this checkpoint.
     pub fn rng_before(&self) -> &R {
         &self.rng_before
     }
 
-    /// Returns the state of the random number generator after generating this checkpoint.
+    /// Returns the random number generator after generation of this checkpoint
     pub fn rng_after(&self) -> &R {
         &self.rng_after
     }
 
-    /// Returns the estimators for this checkpoint.
+    /// Returns the estimators of this checkpoint.
     pub fn estimators(&self) -> &E {
         &self.estimators
     }
 
-    /// Returns the histograms generated during this iteration.
+    /// Access the histograms
     pub fn histograms(&self) -> &Vec<HistogramEstimators<T>> {
         &self.histograms
     }
-}
 
-struct Accumulator<T, A, E> {
-    args: A,
-    estimators: E,
-    limits: Vec<HistogramSpecification<T>>,
-    histograms: Vec<Vec<(T, T)>>,
-}
-
-impl<T, A, E> Arguments<T> for Accumulator<T, A, E>
-where
-    T: AddAssign + Float + FromPrimitive,
-    A: Arguments<T>,
-{
-    fn weight(&mut self) -> T {
-        self.args.weight()
-    }
-
-    fn x(&self) -> &[T] {
-        self.args.x()
-    }
-
-    fn histo_filler(&mut self) -> Option<&mut dyn HistogramFiller<T>> {
-        if self.histograms.is_empty() {
-            None
-        } else {
-            Some(self)
-        }
-    }
-}
-
-impl<T, A, E> HistogramFiller<T> for Accumulator<T, A, E>
-where
-    T: AddAssign + Float + FromPrimitive,
-    A: Arguments<T>,
-{
-    fn fill(&mut self, hist: usize, x: T, value: T) {
-        if !value.is_finite() || value == T::zero() {
-            return;
-        }
-
-        let left = self.limits[hist].left();
-        let right = self.limits[hist].right();
-
-        if x < left || x >= right {
-            return;
-        }
-
-        let bins = T::from_usize(self.limits[hist].bins()).unwrap();
-        let index = ((x - left) / (right - left) * bins).to_usize().unwrap();
-        let value = value * self.args.weight();
-
-        self.histograms[hist][index].0 += value;
-        self.histograms[hist][index].1 += value * value;
-    }
-}
-
-impl<T, A, E> Accumulator<T, A, E>
-where
-    T: AddAssign + Float + FromPrimitive,
-    A: MutArguments<T>,
-    E: Estimators<T> + Updateable<T>,
-{
-    fn new(args: A, estimators: E, limits: Vec<HistogramSpecification<T>>) -> Self {
-        Self {
-            args,
-            estimators,
-            histograms: limits
-                .iter()
-                .map(|l| vec![(T::zero(), T::zero()); l.bins()])
-                .collect(),
-            limits,
-        }
-    }
-
-    fn perform_calls<R>(
-        mut self,
-        calls: usize,
-        _total_calls: usize,
-        rng: &mut R,
-        int: &mut impl Integrand<T>,
-    ) -> Checkpoint<T, R, E>
-    where
-        R: Clone + Rng,
-        Standard: Distribution<T>,
-    {
-        let rng_before = rng.clone();
-
-        for _ in 0..calls {
-            self.args.x_mut().iter_mut().for_each(|x| *x = rng.gen());
-
-            if self.args.check() {
-                let value = int.call(&mut self);
-                self.estimators.update(value);
-            }
-        }
-
-        Checkpoint::new(
-            rng_before,
-            rng.clone(),
+    /// Destructure the checkpoint and return its components.
+    pub fn destructure(self) -> (R, R, E, Vec<HistogramEstimators<T>>) {
+        (
+            self.rng_before,
+            self.rng_after,
             self.estimators,
-            self.limits,
             self.histograms,
         )
     }
 }
 
-pub(crate) fn make_chkpt<T, R, E>(
-    args: impl MutArguments<T>,
-    estimators: E,
-    calls: usize,
-    total_calls: usize,
-    rng: &mut R,
-    int: &mut impl Integrand<T>,
-) -> Checkpoint<T, R, E>
-where
-    T: AddAssign + Float + FromPrimitive,
-    E: Estimators<T> + Updateable<T>,
-    R: Clone + Rng,
-    Standard: Distribution<T>,
-{
-    Accumulator::new(args, estimators, int.histograms()).perform_calls(calls, total_calls, rng, int)
+/// Compute the number of calls on a given core, given the total number of cores
+/// `n_cores`, the index `core` (zero-based) of the current thread as well as the
+/// total number of calls `total_calls` to perform combined on all cores.
+pub(crate) fn compute_calls_for_core(core: usize, n_cores: usize, total_calls: usize) -> usize {
+    // make sure passed data is valid
+    debug_assert!(core < n_cores);
+    // naive estimate of the number of cores
+    let calls_per_core = (total_calls as f32 / n_cores as f32).ceil() as usize;
+
+    // if we are on the last core, not all of the `calls_per_core` might be needed to reach
+    // `total_calls`
+    if n_cores == core + 1 {
+        total_calls - core * calls_per_core
+    } else {
+        calls_per_core
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_calls_per_core_simple() {
+        let n_cores = 3;
+        let total_calls = 17;
+        let calls_per_core = (0..n_cores)
+            .into_iter()
+            .map(|core| compute_calls_for_core(core, n_cores, total_calls))
+            .collect::<Vec<_>>();
+
+        assert_eq!(calls_per_core[0], 6);
+        assert_eq!(calls_per_core[1], 6);
+        assert_eq!(calls_per_core[2], 5);
+        assert_eq!(total_calls, calls_per_core.into_iter().sum::<usize>());
+    }
+
+    #[test]
+    fn test_calls_per_core() {
+        let n_cores = 13;
+        let total_calls = 16490248407;
+        let total_calls_check: usize = (0..n_cores)
+            .into_iter()
+            .map(|core| compute_calls_for_core(core, n_cores, total_calls))
+            .sum();
+        assert_eq!(total_calls, total_calls_check);
+    }
 }
