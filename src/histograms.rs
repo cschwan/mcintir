@@ -87,7 +87,7 @@ where
     /// This is supposed to be sent to a computational unit.
     /// After all units have finished computing, the different
     /// accumulators will be combined.
-    pub fn get_accumulator(&self) -> HistogramAccumulator<T> {
+    pub (crate) fn get_accumulator(&self) -> HistogramAccumulator<T> {
         HistogramAccumulator {
             sums: vec![(T::zero(), T::zero()); self.bins.iter().product()],
             specification: self.clone(),
@@ -120,7 +120,7 @@ where
 
     /// For each of the `observables` compute the index of the associated
     /// bin on the corresponding axis.
-    pub fn compute_bins(&self, observables: &Vec<T>) -> Option<Vec<usize>> {
+    fn compute_bins(&self, observables: &Vec<T>) -> Option<Vec<usize>> {
         let mut bin_indices = Vec::with_capacity(self.bins.len());
         for (dim, obs) in observables.iter().enumerate() {
             if let Some(bin) = self.compute_bin_in_1d(dim, *obs) {
