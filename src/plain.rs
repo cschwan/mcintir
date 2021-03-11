@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::ops::AddAssign;
 
 use crate::core::*;
+use crate::callbacks::Callback;
 
 struct PlainArguments<T> {
     x: Vec<T>,

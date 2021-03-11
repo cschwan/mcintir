@@ -5,7 +5,6 @@ use num_traits::{Float, FromPrimitive};
 use rand::distributions::{Distribution, Standard};
 use rand::Rng;
 use serde::{Deserialize, Serialize};
-use std::fmt::Display;
 use std::ops::AddAssign;
 
 /// Argument type every integrand must accept. Since this is a trait, the integrand must accept
@@ -396,36 +395,6 @@ where
             self.limits,
             self.histograms,
         )
-    }
-}
-
-/// Trait for implementing callbacks for iterative MC algorithms.
-pub trait Callback<T, R, E> {
-    /// This method is called after each successfully finished iteration and may print information
-    /// about it.
-    fn print(&self, chkpts: &[Checkpoint<T, R, E>]);
-}
-
-/// Implements `Callback` and simply prints the results of each iteration.
-pub struct SimpleCallback {}
-
-impl<T, R, E> Callback<T, R, E> for SimpleCallback
-where
-    T: AddAssign + Display + Float + FromPrimitive,
-    E: Estimators<T>,
-{
-    fn print(&self, chkpts: &[Checkpoint<T, R, E>]) {
-        let iteration = chkpts.len() - 1;
-        let chkpt = chkpts.last().unwrap();
-        let estimators = chkpt.estimators();
-
-        println!("iteration {} finished.", iteration);
-        println!(
-            "this iteration N={} E={} \u{b1} {}",
-            estimators.calls(),
-            estimators.mean(),
-            estimators.std()
-        );
     }
 }
 

@@ -69,6 +69,7 @@
 //! [`hep-mc`]: https://github.com/cschwan/hep-mc
 
 pub mod core;
+pub mod callbacks;
 pub mod plain;
 
 pub use crate::core::*;
