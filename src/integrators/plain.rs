@@ -8,6 +8,7 @@ use num_traits::{Float, FromPrimitive};
 use rand::distributions::{Distribution, Standard};
 use rand::Rng;
 use serde::{Deserialize, Serialize};
+use std::fmt::Debug;
 use std::ops::{Add, AddAssign};
 
 use crossbeam as cb;
@@ -92,7 +93,7 @@ fn perform_iteration_contribution_from_core<T, R, I>(
 ) -> (PlainEstimators<T>, Vec<HistogramAccumulator<T>>)
 where
     I: Integrand<T>,
-    T: Float + AddAssign + FromPrimitive + Send + Sync + std::fmt::Debug,
+    T: Float + AddAssign + FromPrimitive + Send + Sync + Debug,
     R: Clone + Rng + Send + Sync + Serialize,
     Standard: Distribution<T>,
 {
@@ -110,12 +111,15 @@ where
     // create a buffer for the sampled random variables such that
     // we do not need to allocate vectors in every call
     let mut x = vec![T::zero(); integrand.dim()];
+
+    // create a thread-local empty histogram accumulator
     let mut histograms = integrand
         .histograms()
         .iter()
         .map(|h| h.get_accumulator())
         .collect();
-    // let mut args = PlainArguments::new(integrand.dim(), &mut histograms);
+
+    // compute the estimators (and fill the histograms)
     let estimators =
         (0..actual_calls)
             .into_iter()
@@ -153,26 +157,21 @@ fn integrate_iteration<T, R, I>(
 ) -> Checkpoint<T, R, PlainEstimators<T>>
 where
     I: Integrand<T>,
-    T: Float + AddAssign + FromPrimitive + Send + Sync + std::fmt::Debug,
+    T: Float + AddAssign + FromPrimitive + Send + Sync + Debug,
     R: Clone + Rng + Send + Sync + Serialize,
     Standard: Distribution<T>,
 {
     let calls_per_core = (calls as f32 / n_cores as f32).ceil() as usize;
-
-    let mut rng_global = rng.clone();
 
     // distribute the workload evenly across the cores
     let collect_results = cb::thread::scope(|s| {
         let mut handles = Vec::with_capacity(n_cores);
 
         for core in 0..n_cores {
-            // Needs to be defined before spawning the thread
-            let rng_local = rng_global.clone();
-
             handles.push(s.spawn(move |_| {
                 perform_iteration_contribution_from_core(
                     integrand,
-                    rng_local,
+                    rng.clone(),
                     calls,
                     calls_per_core,
                     core,
@@ -222,6 +221,7 @@ where
         .collect::<Vec<_>>();
 
     // return the updated rng
+    let mut rng_global = rng.clone();
     for _ in 0..calls * integrand.dim() {
         let _ = rng_global.gen::<T>();
     }
@@ -246,7 +246,7 @@ pub fn integrate<T, R, I>(
 ) -> Vec<Checkpoint<T, R, PlainEstimators<T>>>
 where
     I: Integrand<T>,
-    T: Float + AddAssign + FromPrimitive + Send + Sync + Clone + std::fmt::Debug,
+    T: Float + AddAssign + FromPrimitive + Send + Sync + Clone + Debug,
     R: Clone + Rng + Send + Sync + Serialize,
     Standard: Distribution<T>,
 {
