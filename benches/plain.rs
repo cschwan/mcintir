@@ -42,7 +42,7 @@ fn benchmark_plain() {
 }
 
 fn criterion_plain_benchmark(c: &mut Criterion) {
-    c.bench_function("plain univariate", |b| b.iter(|| benchmark_plain()));
+    c.bench_function("plain_univariate", |b| b.iter(|| benchmark_plain()));
 }
 
 criterion_group!(benches, criterion_plain_benchmark);
