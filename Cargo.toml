@@ -29,6 +29,9 @@ rustdoc-args = ["--html-in-header", "katex-header.html"]
 [[example]]
 name = "plain"
 
+[[example]]
+name = "plain_histogram"
+
 [[bench]]
 name = "plain"
 harness = false
