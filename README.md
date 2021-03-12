@@ -1,6 +1,7 @@
 # `mcintir` - Monte Carlo integrators in Rust
 
 [![Rust](https://github.com/cschwan/mcintir/workflows/Rust/badge.svg)](https://github.com/cschwan/mcintir/actions?query=workflow%3ARust)
+[![Gitter](https://badges.gitter.im/mcintir/support.svg)](https://gitter.im/mcintir/support?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge)
 
 
 `mcintir`—pronounced like the name MacIntyre in English—is a library, which
