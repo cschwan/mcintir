@@ -102,11 +102,11 @@ pub struct FileWriterCallback<P> {
     path: P,
 }
 
-impl <P: AsRef<Path>> FileWriterCallback<P> {
+impl<P: AsRef<Path>> FileWriterCallback<P> {
     /// Create a new `FileWriterCallback` by specifying the
     /// path to the checkpoint file.
     pub fn new(path: P) -> Self {
-        Self {path}
+        Self { path }
     }
 }
 

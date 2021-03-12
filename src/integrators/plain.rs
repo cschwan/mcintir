@@ -276,8 +276,8 @@ mod tests {
     use rand::Rng;
     use rand_pcg::Pcg64;
     use serde::Serialize;
-    use tempfile::NamedTempFile;
     use std::fs::read_to_string;
+    use tempfile::NamedTempFile;
 
     use assert_approx_eq::assert_approx_eq;
 
@@ -419,7 +419,6 @@ mod tests {
 
     #[test]
     fn test_write_checkpoint_to_file() {
-
         // create a temporary file to write to
         let file = NamedTempFile::new().unwrap();
         let path = file.path();
@@ -433,16 +432,11 @@ mod tests {
         let rng = Pcg64::new(0xcafef00dd15ea5e5, 0xa02bdbf7bb3c0a7ac28fa16a64abf96);
 
         // perform a full integration over the four iterations
-        let original = plain::integrate(
-            &MyIntegrand {},
-            &rng.clone(),
-            &callback,
-            1,
-            &iterations,
-        );
+        let original = plain::integrate(&MyIntegrand {}, &rng.clone(), &callback, 1, &iterations);
 
         let chkpt_file = read_to_string(&path).expect("Unable to read checkpoint file");
-        let chkpts: Vec<Checkpoint<f64, Pcg64, PlainEstimators<f64>>> = serde_json::from_str(&chkpt_file).expect("Unable to deserialize checkpoint from json.");
+        let chkpts: Vec<Checkpoint<f64, Pcg64, PlainEstimators<f64>>> =
+            serde_json::from_str(&chkpt_file).expect("Unable to deserialize checkpoint from json.");
 
         // make sure all the checkpoints have been written and read
         assert_eq!(original.len(), chkpts.len());

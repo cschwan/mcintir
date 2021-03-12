@@ -87,7 +87,7 @@ where
     /// This is supposed to be sent to a computational unit.
     /// After all units have finished computing, the different
     /// accumulators will be combined.
-    pub (crate) fn get_accumulator(&self) -> HistogramAccumulator<T> {
+    pub(crate) fn get_accumulator(&self) -> HistogramAccumulator<T> {
         HistogramAccumulator {
             sums: vec![(T::zero(), T::zero()); self.bins.iter().product()],
             specification: self.clone(),
