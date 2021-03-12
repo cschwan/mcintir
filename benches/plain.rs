@@ -2,7 +2,7 @@ use criterion::{criterion_group, criterion_main, Criterion};
 
 use mcintir::callbacks::SinkCallback;
 use mcintir::core::*;
-use mcintir::histograms::HistogramAccumulator;
+use mcintir::histograms::{HistogramAccumulator, HistogramSpecification};
 use mcintir::integrators::plain::*;
 
 use rand_pcg::Pcg64;
@@ -17,6 +17,16 @@ impl Integrand<f64> for MyIntegrand {
 
     fn dim(&self) -> usize {
         1
+    }
+
+    fn histograms(&self) -> Vec<HistogramSpecification<f64>> {
+        vec![HistogramSpecification::new(
+            vec![-1.0],
+            vec![1.0],
+            vec![10],
+            vec!["x".to_string()],
+            "histogram".to_string(),
+        )]
     }
 }
 
