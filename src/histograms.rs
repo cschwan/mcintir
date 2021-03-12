@@ -145,7 +145,7 @@ where
 /// can be combined using the `Add` trait before converting them to a HistogramEstimator,
 /// that stores for each bin in each dimension the mean and the variance in terms of a
 /// `MeanVar`.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug)]
 pub struct HistogramAccumulator<T>
 where
     T: Copy,
