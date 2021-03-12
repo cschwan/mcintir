@@ -1,4 +1,14 @@
 //! Implementation of different callback functions.
+//!
+//! Callback functions serve the purpose of communicating
+//! the results of the integration to the user. This can
+//! be done in several ways, such as printing to the terminal
+//! with various levels of detail or storing a the checkpoints
+//! to a file.
+//!
+//! A callback function is called after each successful iteration
+//! and it is passed a vector of the checkpoints computed up to this
+//! point.
 use crate::core::estimators::Estimators;
 use crate::core::Checkpoint;
 use num_traits::{Float, FromPrimitive};
