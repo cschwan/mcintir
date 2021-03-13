@@ -16,7 +16,7 @@ struct PhaseSpacePoint {
 impl MyIntegrand {
     /// Generate a phase space point from the random numbers, the integrator provides.
     /// In this case, we integrate from  x=1 to x=3.
-    fn _generate_psp(&self, random_numbers: &Vec<f64>) -> PhaseSpacePoint {
+    fn _generate_psp(&self, random_numbers: &[f64]) -> PhaseSpacePoint {
         assert!(random_numbers.len() == 1);
         PhaseSpacePoint {
             x: random_numbers
@@ -37,7 +37,7 @@ impl Integrand<f64> for MyIntegrand {
     /// The first step is to construct a phase space point from the random numbers using the
     /// phase space generator implemented for the integrand. After that, the integrand is
     /// evaluated on the generated phase space point.
-    fn call(&self, x: &Vec<f64>, _: &mut Vec<HistogramAccumulator<f64>>) -> f64 {
+    fn call(&self, x: &[f64], _: &mut Vec<HistogramAccumulator<f64>>) -> f64 {
         let t = x;
         let PhaseSpacePoint { x, weight } = self._generate_psp(t);
         let val = x[0].powi(2) * weight;

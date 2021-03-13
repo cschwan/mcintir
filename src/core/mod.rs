@@ -2,7 +2,7 @@
 pub mod estimators;
 
 use crate::core::estimators::Estimators;
-use crate::histograms::*;
+use crate::histograms::{HistogramAccumulator, HistogramEstimators, HistogramSpecification};
 use num_traits::{Float, FromPrimitive};
 use serde::{Deserialize, Serialize};
 use std::ops::AddAssign;
@@ -10,7 +10,7 @@ use std::ops::AddAssign;
 /// Integrand trait
 pub trait Integrand<T: Copy>: Send + Sync {
     /// Call the integrand with a phase space point.
-    fn call(&self, x: &Vec<T>, h: &mut Vec<HistogramAccumulator<T>>) -> T;
+    fn call(&self, x: &[T], h: &mut Vec<HistogramAccumulator<T>>) -> T;
     /// The dimension of the integrand.
     fn dim(&self) -> usize;
     /// Definitions of the histograms that should be filled during the integration.

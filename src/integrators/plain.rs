@@ -1,8 +1,8 @@
 //! Plain integrator
 use crate::callbacks::Callback;
-use crate::core::estimators::*;
-use crate::core::*;
-use crate::histograms::*;
+use crate::core::estimators::{BasicEstimators, Estimators};
+use crate::core::{compute_calls_for_core, Checkpoint, Integrand};
+use crate::histograms::HistogramAccumulator;
 
 use num_traits::{Float, FromPrimitive};
 use rand::distributions::{Distribution, Standard};
@@ -272,6 +272,7 @@ where
 mod tests {
     use super::*;
     use crate::callbacks::{FileWriterCallback, SinkCallback};
+    use crate::histograms::HistogramSpecification;
     use crate::integrators::plain;
     use rand::Rng;
     use rand_pcg::Pcg64;
@@ -296,7 +297,7 @@ mod tests {
     struct MyIntegrand {}
 
     impl Integrand<f64> for MyIntegrand {
-        fn call(&self, args: &Vec<f64>, h: &mut Vec<HistogramAccumulator<f64>>) -> f64 {
+        fn call(&self, args: &[f64], h: &mut Vec<HistogramAccumulator<f64>>) -> f64 {
             let y = 2.0 * args[0] - 1.0;
             let val = y.abs();
             h[0].fill(&vec![y], val);

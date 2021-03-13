@@ -10,7 +10,7 @@ use rand_pcg::Pcg64;
 struct MyIntegrand;
 
 impl Integrand<f64> for MyIntegrand {
-    fn call(&self, args: &Vec<f64>, _: &mut Vec<HistogramAccumulator<f64>>) -> f64 {
+    fn call(&self, args: &[f64], _: &mut Vec<HistogramAccumulator<f64>>) -> f64 {
         let x = 2.0 * args[0] - 1.0;
         x.abs()
     }

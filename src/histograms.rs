@@ -120,7 +120,7 @@ where
 
     /// For each of the `observables` compute the index of the associated
     /// bin on the corresponding axis.
-    fn compute_bins(&self, observables: &Vec<T>) -> Option<Vec<usize>> {
+    fn compute_bins(&self, observables: &[T]) -> Option<Vec<usize>> {
         let mut bin_indices = Vec::with_capacity(self.bins.len());
         for (dim, obs) in observables.iter().enumerate() {
             if let Some(bin) = self.compute_bin_in_1d(dim, *obs) {
@@ -131,7 +131,7 @@ where
         }
 
         // if we arrive here, the observables can all be represented in the histogram
-        return Some(bin_indices);
+        Some(bin_indices)
     }
 }
 
@@ -167,13 +167,13 @@ where
 {
     /// Add the `value` to the bin in the histogram corresponding to
     /// the provided `observables`.
-    pub fn fill(&mut self, observables: &Vec<T>, value: T) {
+    pub fn fill(&mut self, observables: &[T], value: T) {
         debug_assert!(observables.len() == self.specification.bins().len());
         if !value.is_finite() || value == T::zero() {
             return;
         }
 
-        if let Some(bin_indices) = self.specification.compute_bins(&observables) {
+        if let Some(bin_indices) = self.specification.compute_bins(observables) {
             let bin: usize = bin_indices
                 .into_iter()
                 .zip(self.bin_cumulative.iter())
@@ -182,7 +182,6 @@ where
             self.sums[bin].0 += value;
             self.sums[bin].1 += value * value;
         } else {
-            return;
         }
     }
 

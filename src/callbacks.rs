@@ -89,8 +89,8 @@ where
         // Compute the cumulative result.
         let cumulative = chkpts
             //.clone()
-            .into_iter()
-            .map(|c| c.estimators())
+            .iter()
+            .map(Checkpoint::estimators)
             .fold(E::default(), |acc, e| acc + e.clone());
 
         println!(

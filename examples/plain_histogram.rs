@@ -11,7 +11,7 @@ use rand_pcg::Pcg64;
 struct MyIntegrand;
 
 impl Integrand<f64> for MyIntegrand {
-    fn call(&self, args: &Vec<f64>, h: &mut Vec<HistogramAccumulator<f64>>) -> f64 {
+    fn call(&self, args: &[f64], h: &mut Vec<HistogramAccumulator<f64>>) -> f64 {
         let y = 2.0 * args[0] - 1.0;
         let val = y.abs();
         h[0].fill(&vec![y], val);
@@ -49,9 +49,12 @@ fn main() {
         &[100_000, 100_000, 100_000, 100_000],
     );
 
-    let mut cumulative_iter = results
-        .into_iter()
-        .map(|c| (c.estimators().clone(), c.histograms()[0].clone().bins().clone()));
+    let mut cumulative_iter = results.into_iter().map(|c| {
+        (
+            c.estimators().clone(),
+            c.histograms()[0].clone().bins().clone(),
+        )
+    });
 
     let (first_est, first_hist) = cumulative_iter.next().unwrap();
 
@@ -67,9 +70,18 @@ fn main() {
     });
 
     println!("\n--------------------------------------");
-    println!("Final result: {: >0.8} \u{b1} {: >0.8}", cumulative.0.mean(), cumulative.0.std());
+    println!(
+        "Final result: {: >0.8} \u{b1} {: >0.8}",
+        cumulative.0.mean(),
+        cumulative.0.std()
+    );
     println!("\nHistogram content:\n");
     for (bin, content) in cumulative.1.into_iter().enumerate() {
-        println!("[Bin {}]: {: >0.8} \u{b1} {: >0.8}", bin, content.mean(), content.std());
+        println!(
+            "[Bin {}]: {: >0.8} \u{b1} {: >0.8}",
+            bin,
+            content.mean(),
+            content.std()
+        );
     }
 }
